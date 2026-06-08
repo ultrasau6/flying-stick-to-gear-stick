@@ -12,6 +12,14 @@
 
 #include <gtk/gtk.h>
 
+int activated = 0 ;
+
+char* SelectedDev ;
+
+guint timeout_id = 0 ;
+
+int mainInterval = 10;
+
 int min(int a , int b){
     if (a > b ){
         return b ;
@@ -372,18 +380,47 @@ void ChangePeripheral(GtkWidget *combo){
 }
 
 void RefreshPeripheral(GtkWidget *button,gpointer data){
+    GtkWidget *combo = GTK_WIDGET(data);
     printf("Refresh\n");
     int devNumber;
     char* names[255];
     GetDevicesNames(names,&devNumber);
-    //gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(combo), "test");
-    //*combo = gtk_combo_box_text_new();
+    gtk_combo_box_text_remove_all(GTK_COMBO_BOX_TEXT(combo));
     
 
     for(int i = 0 ; i < devNumber;i++){
         printf("%d:%s\n",i,names[i]);
-    //    gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(combo), names[i]);
+        gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(combo), names[i]);
     }
+    gtk_combo_box_set_active(GTK_COMBO_BOX(combo),0);
+}
+
+gboolean placholder(gpointer data){
+    printf("placeholder\n");
+    return G_SOURCE_CONTINUE;
+}
+
+void activate(GtkWidget *button,gpointer data){
+
+    GtkWidget *window = GTK_WIDGET(data);
+
+    printf("activate : %d\n",activated);
+
+    if (activated){
+        gtk_window_set_title(GTK_WINDOW(window), "JoytoGear - deactivated");
+        g_source_remove(timeout_id);
+        timeout_id = 0;
+        activated=0;
+    }
+    else{
+
+        gtk_window_set_title(GTK_WINDOW(window), "JoytoGear - activated");
+
+        timeout_id = g_timeout_add(mainInterval,  placholder, NULL);
+        activated=1;
+    }
+    
+    
 }
 
 GtkWidget* init_gtk(int argc, char *argv[]){
@@ -393,7 +430,7 @@ GtkWidget* init_gtk(int argc, char *argv[]){
     GtkWidget *boxRight = gtk_box_new(GTK_ORIENTATION_VERTICAL, 6);
     GtkWidget *window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
 
-    gtk_window_set_title(GTK_WINDOW(window), "JoytoGear");
+    gtk_window_set_title(GTK_WINDOW(window), "JoytoGear - deactivated");
     gtk_window_set_default_size(GTK_WINDOW(window), 400, 300);
 
     g_signal_connect(window, "destroy", G_CALLBACK(gtk_main_quit), NULL);
@@ -402,17 +439,21 @@ GtkWidget* init_gtk(int argc, char *argv[]){
 
     GtkWidget *combo = gtk_combo_box_text_new();
     gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(combo), "Aucun");
+    gtk_combo_box_set_active(GTK_COMBO_BOX(combo),0);
 
 
-
-
+    GtkWidget *btnActivate = gtk_toggle_button_new_with_label("Activer");
+    //gboolean actif = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(btnActivate));
 
     GtkWidget *Refresh = gtk_button_new_with_label("Refresh Devices");
-    //gboolean actif = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(Refresh));
-    
+    //---------------------------------
+    //left side
     gtk_box_pack_start(GTK_BOX(boxLeft), Refresh, TRUE, TRUE, 0);
-
     gtk_box_pack_end(GTK_BOX(boxLeft), combo, TRUE, TRUE, 0);
+
+    //---------------------------------
+    //right side
+    gtk_box_pack_start(GTK_BOX(boxRight), btnActivate, TRUE, TRUE, 0);
 
     GtkWidget *boxWindow = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 6);
     gtk_box_pack_start(GTK_BOX(boxWindow), boxLeft, TRUE, TRUE, 0);
@@ -421,7 +462,9 @@ GtkWidget* init_gtk(int argc, char *argv[]){
     //if the user change dev , call the ChangePeripheral function
     g_signal_connect(combo, "changed", G_CALLBACK(ChangePeripheral), NULL);
     //refresh dev button
-    g_signal_connect(Refresh, "clicked", G_CALLBACK(RefreshPeripheral), &combo);
+    g_signal_connect(Refresh, "clicked", G_CALLBACK(RefreshPeripheral), combo);
+    //
+    g_signal_connect(btnActivate, "toggled", G_CALLBACK(activate), window);
 
     gtk_container_add(GTK_CONTAINER(window), boxWindow);
     return window;
@@ -454,7 +497,7 @@ int main(int argc, char *argv[]) {
     //    fprintf(stderr, "Erreur uinput: %s\n", strerror(-rc));
         return 1;
     }
-
+    libevdev_free(vdev);
     //readRControl(rc,dev);
     gtk_widget_show_all(window);
     gtk_main();
