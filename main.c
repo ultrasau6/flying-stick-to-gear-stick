@@ -10,6 +10,8 @@
 #include <libevdev-1.0/libevdev/libevdev.h>
 #include <libevdev-1.0/libevdev/libevdev-uinput.h>
 
+#include <gtk/gtk.h>
+
 int min(int a , int b){
     if (a > b ){
         return b ;
@@ -140,14 +142,10 @@ void ConstMove(struct libevdev *dev){
 
 
 void XCenterForce(int fd,int Xpos,int DeltaX){
-
-    
     if (Xpos>0){
-        //printf("Xpos R : %d\n",Xpos);
         move.direction = 0x4000;
         ChangeSettingMove(fd);
     }
-
     else {
         //printf("Xpos L : %d\n",Xpos);
         move.direction = 0xC000;
@@ -164,11 +162,11 @@ void XCenterForce(int fd,int Xpos,int DeltaX){
     ChangeSettingMove(fd);
 }
 
-void readRControl(int rc, struct libevdev *dev){
+void readRControl(int rc, struct libevdev **dev){
     struct input_event ev;
-    struct input_event rumble = RumbleEffect(dev);
-    int fd = libevdev_get_fd(dev);
-    ConstMove(dev);
+    struct input_event rumble = RumbleEffect(*dev);
+    int fd = libevdev_get_fd(*dev);
+    ConstMove(*dev);
     write(fd, &move, sizeof(move));
 
     int Xaxe = 0 ;
@@ -198,7 +196,7 @@ void readRControl(int rc, struct libevdev *dev){
     
 
     while (1) {
-        int rc = libevdev_next_event(dev,
+        int rc = libevdev_next_event(*dev,
                                     LIBEVDEV_READ_FLAG_NORMAL | LIBEVDEV_READ_FLAG_BLOCKING,
                                     &ev);
 
@@ -282,45 +280,104 @@ void readRControl(int rc, struct libevdev *dev){
 }
 
 
-int main() {
+
+int getfdFromPath(const char* path){
+    int fd = open(path, O_RDWR | O_NONBLOCK);
+    if (fd < 0) {
+        perror("open");
+        return -1;
+    }
+    return fd;
+}
+
+int getrcFromfd(const int fd , struct libevdev **dev){
+    int rc = libevdev_new_from_fd(fd, dev);
+    if (rc < 0) {
+        fprintf(stderr, "Erreur libevdev: %s\n", strerror(-rc));
+        return -1;
+    }
+    return rc;
+}
+
+char** GetDevicesNames(){
     struct libevdev *dev = NULL;
-    const char* name = malloc(100);
-    char* path = malloc(100);
+    char* path = malloc(250);
+    int peripheral_Number = 0;
 
-    int fd ;
-    int rc ;
+    
+    while (1){
+        sprintf(path, "/dev/input/event%d", peripheral_Number);
+        if (access(path, F_OK) == 0) {}
+        else{}
+    }
+}
+
+int FindDeviceByName(const char* name, struct libevdev **dev){
+
+    char* path = malloc(250);
+
     int perNum = 0;
-
     while (1)
     {
-        perNum++;
+        
+        //create path for the peripheral
         sprintf(path, "/dev/input/event%d", perNum);
-        // 1. Ouvrir le fichier du périphérique
-        fd = open(path, O_RDWR | O_NONBLOCK);
-        if (fd < 0) {
-            perror("open");
-            return 1;
-        }
-        // 2. Créer une struct libevdev à partir du fd
-        rc = libevdev_new_from_fd(fd, &dev);
-        if (rc < 0) {
-            fprintf(stderr, "Erreur libevdev: %s\n", strerror(-rc));
-            return 1;
-        }
+        printf("%s : ",path);
+        if (access(path, F_OK) == 0) {
+            // if file exists
+            int fd = getfdFromPath(path);
+            if (fd == -1){free(path);printf("fd -1\n");return -1;}
 
-        // 3. Afficher le nom du périphérique (vérification)
-        name = libevdev_get_name(dev);
-        //printf("Device: %s\n", name);
-        if (strcmp(name,"Microsoft SideWinder Force Feedback 2 Joystick") == 0){
-            printf("finded the joystick\n");
+            int rc = getrcFromfd(fd,dev);
+            if (rc == -1){free(path);printf("rc -1\n");return -1;}
+
+            printf("%s\n",libevdev_get_name(*dev));
+
+            if (strcmp(libevdev_get_name(*dev),name) == 0){
+                printf("joystick found\n");
+                close(fd);
+                free(path);
+                return rc;
+            }
+            // if the peripheral is not the one we search, we remove it and set the counter to ++ to setup the next one
+            libevdev_free(*dev);
+            //*dev = NULL;
+            close(fd);
+            perNum++;
+
+        } else {
+            // if file doesn't exist
+            printf("file dont exist\n");
             break;
         }
-        // 4. Nettoyage
-        libevdev_free(dev);
-        close(fd);
+        
+
 
     }
+    free(path);
+    return -1;
+}
 
+int init_gtk(){
+    
+}
+
+int main(int argc, char *argv[]) {
+
+    gtk_init(&argc, &argv);
+    
+    GtkWidget *window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
+    gtk_window_set_title(GTK_WINDOW(window), "JoytoGear");
+    gtk_window_set_default_size(GTK_WINDOW(window), 400, 300);
+
+    g_signal_connect(window, "destroy", G_CALLBACK(gtk_main_quit), NULL);
+    gtk_widget_show_all(window);
+    gtk_main();
+    struct libevdev *dev = NULL;
+    printf("test\n");
+    
+    int rc = FindDeviceByName("Microsoft SideWinder Force Feedback 2 Joystick",&dev);
+    if (rc < 0){return -1;}
     struct libevdev *vdev = libevdev_new();
     libevdev_set_name(vdev, "virtual-shifter");
 
@@ -335,9 +392,10 @@ int main() {
         fprintf(stderr, "Erreur uinput: %s\n", strerror(-rc));
         return 1;
     }
-    
+    printf("test\n");
 
-    readRControl(rc,dev);
+    readRControl(rc,&dev);
+    
     return 0;
 }
 
