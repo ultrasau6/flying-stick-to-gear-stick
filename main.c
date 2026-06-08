@@ -162,11 +162,11 @@ void XCenterForce(int fd,int Xpos,int DeltaX){
     ChangeSettingMove(fd);
 }
 
-void readRControl(int rc, struct libevdev **dev){
+void readRControl(int rc, struct libevdev *dev){
     struct input_event ev;
-    struct input_event rumble = RumbleEffect(*dev);
-    int fd = libevdev_get_fd(*dev);
-    ConstMove(*dev);
+    struct input_event rumble = RumbleEffect(dev);
+    int fd = libevdev_get_fd(dev);
+    ConstMove(dev);
     write(fd, &move, sizeof(move));
 
     int Xaxe = 0 ;
@@ -196,7 +196,7 @@ void readRControl(int rc, struct libevdev **dev){
     
 
     while (1) {
-        int rc = libevdev_next_event(*dev,
+        int rc = libevdev_next_event(dev,
                                     LIBEVDEV_READ_FLAG_NORMAL | LIBEVDEV_READ_FLAG_BLOCKING,
                                     &ev);
 
@@ -299,20 +299,29 @@ int getrcFromfd(const int fd , struct libevdev **dev){
     return rc;
 }
 
-char** GetDevicesNames(){
+char** GetDevicesNames(char* names[],int *n){
     struct libevdev *dev = NULL;
     char* path = malloc(250);
     int peripheral_Number = 0;
-
     
     while (1){
         sprintf(path, "/dev/input/event%d", peripheral_Number);
-        if (access(path, F_OK) == 0) {}
-        else{}
+        if (access(path, F_OK) == 0) {
+            int fd = getfdFromPath(path);
+            if (fd == -1){free(path);printf("fd -1\n");return 0;}
+
+            int rc = getrcFromfd(fd,&dev);
+            if (rc == -1){free(path);printf("rc -1\n");return 0;}
+            names[peripheral_Number] = libevdev_get_name(dev);
+            peripheral_Number++;
+        }
+        else{break;}
     }
+    *n = peripheral_Number;
+    return names;
 }
 
-int FindDeviceByName(const char* name, struct libevdev **dev){
+int FindDeviceByName(char* name, struct libevdev **dev){
 
     char* path = malloc(250);
 
@@ -358,26 +367,79 @@ int FindDeviceByName(const char* name, struct libevdev **dev){
     return -1;
 }
 
-int init_gtk(){
-    
+void ChangePeripheral(GtkWidget *combo){
+    printf("\n%s\n",gtk_combo_box_text_get_active_text(GTK_COMBO_BOX_TEXT(combo)));
 }
 
-int main(int argc, char *argv[]) {
+void RefreshPeripheral(GtkWidget *button,gpointer data){
+    printf("Refresh\n");
+    int devNumber;
+    char* names[255];
+    GetDevicesNames(names,&devNumber);
+    //gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(combo), "test");
+    //*combo = gtk_combo_box_text_new();
+    
+
+    for(int i = 0 ; i < devNumber;i++){
+        printf("%d:%s\n",i,names[i]);
+    //    gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(combo), names[i]);
+    }
+}
+
+GtkWidget* init_gtk(int argc, char *argv[]){
 
     gtk_init(&argc, &argv);
-    
+    GtkWidget *boxLeft = gtk_box_new(GTK_ORIENTATION_VERTICAL, 6);
+    GtkWidget *boxRight = gtk_box_new(GTK_ORIENTATION_VERTICAL, 6);
     GtkWidget *window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
+
     gtk_window_set_title(GTK_WINDOW(window), "JoytoGear");
     gtk_window_set_default_size(GTK_WINDOW(window), 400, 300);
 
     g_signal_connect(window, "destroy", G_CALLBACK(gtk_main_quit), NULL);
-    gtk_widget_show_all(window);
-    gtk_main();
-    struct libevdev *dev = NULL;
-    printf("test\n");
     
+    
+
+    GtkWidget *combo = gtk_combo_box_text_new();
+    gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(combo), "Aucun");
+
+
+
+
+
+    GtkWidget *Refresh = gtk_button_new_with_label("Refresh Devices");
+    //gboolean actif = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(Refresh));
+    
+    gtk_box_pack_start(GTK_BOX(boxLeft), Refresh, TRUE, TRUE, 0);
+
+    gtk_box_pack_end(GTK_BOX(boxLeft), combo, TRUE, TRUE, 0);
+
+    GtkWidget *boxWindow = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 6);
+    gtk_box_pack_start(GTK_BOX(boxWindow), boxLeft, TRUE, TRUE, 0);
+    gtk_box_pack_end(GTK_BOX(boxWindow), boxRight, TRUE, TRUE, 0);
+
+    //if the user change dev , call the ChangePeripheral function
+    g_signal_connect(combo, "changed", G_CALLBACK(ChangePeripheral), NULL);
+    //refresh dev button
+    g_signal_connect(Refresh, "clicked", G_CALLBACK(RefreshPeripheral), &combo);
+
+    gtk_container_add(GTK_CONTAINER(window), boxWindow);
+    return window;
+}
+
+
+
+int main(int argc, char *argv[]) {
+
+    GtkWidget *window = init_gtk(argc,argv);
+
+    struct libevdev *dev = NULL;
+
+
+
     int rc = FindDeviceByName("Microsoft SideWinder Force Feedback 2 Joystick",&dev);
     if (rc < 0){return -1;}
+
     struct libevdev *vdev = libevdev_new();
     libevdev_set_name(vdev, "virtual-shifter");
 
@@ -389,13 +451,13 @@ int main(int argc, char *argv[]) {
     
     int rc2 = libevdev_uinput_create_from_device(vdev,LIBEVDEV_UINPUT_OPEN_MANAGED,&uidev);
     if (rc2 < 0) {
-        fprintf(stderr, "Erreur uinput: %s\n", strerror(-rc));
+    //    fprintf(stderr, "Erreur uinput: %s\n", strerror(-rc));
         return 1;
     }
-    printf("test\n");
 
-    readRControl(rc,&dev);
-    
+    //readRControl(rc,dev);
+    gtk_widget_show_all(window);
+    gtk_main();
     return 0;
 }
 
